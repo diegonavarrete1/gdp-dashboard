@@ -92,7 +92,6 @@ def var_es_hist(returns, alpha):
     ES = sorted_returns.iloc[:index].mean()
 
     return VaR, ES
-import numpy as np
 
 def var_es_mc(returns, alpha, n_sim=10000):
     media = returns.mean()
@@ -167,70 +166,70 @@ for t in range(252, len(returns)):
     rolling_results.iloc[t, rolling_results.columns.get_loc('ES_99_norm')] = ES_99_n
     violations = rolling_results['Returns'] < rolling_results['VaR_95_hist']
 
+# ---------------------------
+# 🔧 IMPORT SEGURO
+# ---------------------------
 try:
     import plotly.graph_objects as go
     use_plotly = True
 except:
     use_plotly = False
-fig = go.Figure()
 
-# Returns
-fig.add_trace(go.Scatter(
-    x=rolling_results.index,
-    y=rolling_results['Returns'],
-    name='Returns'
-))
+# ---------------------------
+# 📉 GRÁFICA PRINCIPAL
+# ---------------------------
+st.subheader("📉 Returns vs VaR")
 
-# VaR
-fig.add_trace(go.Scatter(
-    x=rolling_results.index,
-    y=rolling_results['VaR_95_hist'],
-    name='VaR 95%',
-    line=dict(dash='dash')
-))
+plot_data = rolling_results.dropna()
 
-st.plotly_chart(fig)
+if use_plotly:
+    fig = go.Figure()
 
-st.line_chart(
-    rolling_results[['Returns', 'VaR_95_hist']].dropna()
-)
+    fig.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data['Returns'],
+        name='Returns'
+    ))
 
+    fig.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data['VaR_95_hist'],
+        name='VaR 95%',
+        line=dict(dash='dash')
+    ))
 
+    st.plotly_chart(fig)
+
+else:
+    st.line_chart(
+        plot_data[['Returns', 'VaR_95_hist']]
+    )
+
+# ---------------------------
+# 📊 VaR y ES
+# ---------------------------
 st.header("📊 VaR y Expected Shortfall", divider='red')
 
-# ---------------------------
-# 🎛️ SELECTORES
-# ---------------------------
 metodos = ["Normal", "t-Student", "Histórico", "Monte Carlo"]
 metodo_sel = st.selectbox("Selecciona método", metodos)
 
 alpha_sel = st.selectbox("Selecciona nivel de confianza", [0.95, 0.975, 0.99])
 
-# ---------------------------
-# 🧮 CALCULAR SEGÚN MÉTODO
-# ---------------------------
 if metodo_sel == "Normal":
     VaR, ES = var_es_normal(returns, alpha_sel)
-
 elif metodo_sel == "t-Student":
     VaR, ES = var_es_t(returns, alpha_sel)
-
 elif metodo_sel == "Histórico":
     VaR, ES = var_es_hist(returns, alpha_sel)
-
-elif metodo_sel == "Monte Carlo":
+else:
     VaR, ES = var_es_mc(returns, alpha_sel)
 
-# ---------------------------
-# 📊 MOSTRAR RESULTADOS
-# ---------------------------
 col1, col2 = st.columns(2)
-
 col1.metric("VaR", f"{VaR:.5f}")
 col2.metric("ES", f"{ES:.5f}")
 
 # ---------------------------
-# 📋 TABLA COMPARATIVA (TODOS)
+# 📋 TABLA
 # ---------------------------
 st.subheader("📋 Comparación de métodos")
 
@@ -245,96 +244,62 @@ for a in [0.95, 0.975, 0.99]:
     resultados.append({
         "Alpha": a,
         "VaR Normal": var_n,
-        "ES Normal": es_n,
         "VaR t": var_t,
-        "ES t": es_t,
         "VaR Hist": var_h,
-        "ES Hist": es_h,
         "VaR MC": var_mc,
-        "ES MC": es_mc,
     })
 
 df_results = pd.DataFrame(resultados)
-
 st.dataframe(df_results)
 
 # ---------------------------
 # 📊 GRÁFICA COMPARATIVA
 # ---------------------------
-st.subheader("📊 Comparación VaR por método")
+st.subheader("📊 Comparación VaR")
 
-fig = go.Figure()
+if use_plotly:
+    fig = go.Figure()
 
-for col in ["VaR Normal", "VaR t", "VaR Hist", "VaR MC"]:
-    fig.add_trace(go.Bar(
-        x=df_results["Alpha"],
-        y=df_results[col],
-        name=col
-    ))
+    for col in ["VaR Normal", "VaR t", "VaR Hist", "VaR MC"]:
+        fig.add_bar(
+            x=df_results["Alpha"],
+            y=df_results[col],
+            name=col
+        )
 
-st.plotly_chart(fig)
+    st.plotly_chart(fig)
+
+else:
+    st.bar_chart(
+        df_results.set_index("Alpha")
+    )
 
 # ---------------------------
-# 📉 ROLLING WINDOW VISUAL
+# 📉 ROLLING
 # ---------------------------
 st.subheader("📉 Rolling VaR (252 días)")
 
-plot_data = rolling_results.dropna()
-
-fig2 = go.Figure()
-
-# Returns
-fig2.add_trace(go.Scatter(
-    x=plot_data.index,
-    y=plot_data['Returns'],
-    name='Returns'
-))
-
-# Selector dinámico
 tipo_rolling = st.selectbox(
-    "Selecciona tipo de VaR rolling",
+    "Tipo de VaR rolling",
     ["Histórico", "Normal"]
 )
 
 if tipo_rolling == "Histórico":
-    fig2.add_trace(go.Scatter(
-        x=plot_data.index,
-        y=plot_data['VaR_95_hist'],
-        name='VaR 95 Hist',
-        line=dict(color='red', dash='dash')
-    ))
+    cols = ['Returns', 'VaR_95_hist', 'ES_95_hist']
+else:
+    cols = ['Returns', 'VaR_95_norm', 'ES_95_norm']
 
-    fig2.add_trace(go.Scatter(
-        x=plot_data.index,
-        y=plot_data['ES_95_hist'],
-        name='ES 95 Hist',
-        line=dict(color='orange', dash='dot')
-    ))
+if use_plotly:
+    fig2 = go.Figure()
+
+    for col in cols:
+        fig2.add_trace(go.Scatter(
+            x=plot_data.index,
+            y=plot_data[col],
+            name=col
+        ))
+
+    st.plotly_chart(fig2)
 
 else:
-    fig2.add_trace(go.Scatter(
-        x=plot_data.index,
-        y=plot_data['VaR_95_norm'],
-        name='VaR 95 Normal',
-        line=dict(color='blue', dash='dash')
-    ))
-
-    fig2.add_trace(go.Scatter(
-        x=plot_data.index,
-        y=plot_data['ES_95_norm'],
-        name='ES 95 Normal',
-        line=dict(color='green', dash='dot')
-    ))
-
-# 🔥 Violaciones
-violations = plot_data['Returns'] < plot_data['VaR_95_hist']
-
-fig2.add_trace(go.Scatter(
-    x=plot_data.index[violations],
-    y=plot_data['Returns'][violations],
-    mode='markers',
-    name='Violaciones',
-    marker=dict(color='black', size=6)
-))
-
-st.plotly_chart(fig2)
+    st.line_chart(plot_data[cols])
