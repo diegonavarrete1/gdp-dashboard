@@ -71,9 +71,18 @@ def var_es_normal(r, alpha):
 
 
 def var_es_t(r, alpha):
-    r = pd.Series(r).dropna()
+    # Convertir a numpy limpio
+    r = pd.Series(r).astype(float)
 
-    df, loc, scale = student_t.fit(r)
+    # Limpiar basura
+    r = r.replace([np.inf, -np.inf], np.nan).dropna()
+
+    # ⚠️ Si hay muy pocos datos, evitar crash
+    if len(r) < 10:
+        return np.nan, np.nan
+
+    # Ajuste t
+    df, loc, scale = student_t.fit(r.values)
 
     x = student_t.ppf(1 - alpha, df)
 
@@ -84,7 +93,6 @@ def var_es_t(r, alpha):
     )
 
     return VaR, ES
-
 
 def var_es_hist(r, alpha):
     sorted_r = r.sort_values()
