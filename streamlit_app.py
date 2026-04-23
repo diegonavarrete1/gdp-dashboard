@@ -11,7 +11,7 @@ st.set_page_config(
 
 @st.cache_data
 def get_data():
-    ticker = "(BTC-USD)"
+    ticker = "BTC-USD"
     data = yf.download(ticker, start="2010-01-01")
 
     # Ver qué columnas hay
