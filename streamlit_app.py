@@ -188,3 +188,148 @@ fig.add_trace(go.Scatter(
 
 st.plotly_chart(fig)
 
+
+import plotly.graph_objects as go
+
+st.header("📊 VaR y Expected Shortfall", divider='red')
+
+# ---------------------------
+# 🎛️ SELECTORES
+# ---------------------------
+metodos = ["Normal", "t-Student", "Histórico", "Monte Carlo"]
+metodo_sel = st.selectbox("Selecciona método", metodos)
+
+alpha_sel = st.selectbox("Selecciona nivel de confianza", [0.95, 0.975, 0.99])
+
+# ---------------------------
+# 🧮 CALCULAR SEGÚN MÉTODO
+# ---------------------------
+if metodo_sel == "Normal":
+    VaR, ES = var_es_normal(returns, alpha_sel)
+
+elif metodo_sel == "t-Student":
+    VaR, ES = var_es_t(returns, alpha_sel)
+
+elif metodo_sel == "Histórico":
+    VaR, ES = var_es_hist(returns, alpha_sel)
+
+elif metodo_sel == "Monte Carlo":
+    VaR, ES = var_es_mc(returns, alpha_sel)
+
+# ---------------------------
+# 📊 MOSTRAR RESULTADOS
+# ---------------------------
+col1, col2 = st.columns(2)
+
+col1.metric("VaR", f"{VaR:.5f}")
+col2.metric("ES", f"{ES:.5f}")
+
+# ---------------------------
+# 📋 TABLA COMPARATIVA (TODOS)
+# ---------------------------
+st.subheader("📋 Comparación de métodos")
+
+resultados = []
+
+for a in [0.95, 0.975, 0.99]:
+    var_n, es_n = var_es_normal(returns, a)
+    var_t, es_t = var_es_t(returns, a)
+    var_h, es_h = var_es_hist(returns, a)
+    var_mc, es_mc = var_es_mc(returns, a)
+
+    resultados.append({
+        "Alpha": a,
+        "VaR Normal": var_n,
+        "ES Normal": es_n,
+        "VaR t": var_t,
+        "ES t": es_t,
+        "VaR Hist": var_h,
+        "ES Hist": es_h,
+        "VaR MC": var_mc,
+        "ES MC": es_mc,
+    })
+
+df_results = pd.DataFrame(resultados)
+
+st.dataframe(df_results)
+
+# ---------------------------
+# 📊 GRÁFICA COMPARATIVA
+# ---------------------------
+st.subheader("📊 Comparación VaR por método")
+
+fig = go.Figure()
+
+for col in ["VaR Normal", "VaR t", "VaR Hist", "VaR MC"]:
+    fig.add_trace(go.Bar(
+        x=df_results["Alpha"],
+        y=df_results[col],
+        name=col
+    ))
+
+st.plotly_chart(fig)
+
+# ---------------------------
+# 📉 ROLLING WINDOW VISUAL
+# ---------------------------
+st.subheader("📉 Rolling VaR (252 días)")
+
+plot_data = rolling_results.dropna()
+
+fig2 = go.Figure()
+
+# Returns
+fig2.add_trace(go.Scatter(
+    x=plot_data.index,
+    y=plot_data['Returns'],
+    name='Returns'
+))
+
+# Selector dinámico
+tipo_rolling = st.selectbox(
+    "Selecciona tipo de VaR rolling",
+    ["Histórico", "Normal"]
+)
+
+if tipo_rolling == "Histórico":
+    fig2.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data['VaR_95_hist'],
+        name='VaR 95 Hist',
+        line=dict(color='red', dash='dash')
+    ))
+
+    fig2.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data['ES_95_hist'],
+        name='ES 95 Hist',
+        line=dict(color='orange', dash='dot')
+    ))
+
+else:
+    fig2.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data['VaR_95_norm'],
+        name='VaR 95 Normal',
+        line=dict(color='blue', dash='dash')
+    ))
+
+    fig2.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data['ES_95_norm'],
+        name='ES 95 Normal',
+        line=dict(color='green', dash='dot')
+    ))
+
+# 🔥 Violaciones
+violations = plot_data['Returns'] < plot_data['VaR_95_hist']
+
+fig2.add_trace(go.Scatter(
+    x=plot_data.index[violations],
+    y=plot_data['Returns'][violations],
+    mode='markers',
+    name='Violaciones',
+    marker=dict(color='black', size=6)
+))
+
+st.plotly_chart(fig2)
