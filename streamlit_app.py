@@ -4,7 +4,6 @@ import yfinance as yf
 import numpy as np
 from scipy.stats import norm
 from scipy.stats import t
-import plotly.graph_objects as go
 
 # Configuración de la página
 st.set_page_config(
@@ -168,8 +167,11 @@ for t in range(252, len(returns)):
     rolling_results.iloc[t, rolling_results.columns.get_loc('ES_99_norm')] = ES_99_n
     violations = rolling_results['Returns'] < rolling_results['VaR_95_hist']
 
-import plotly.graph_objects as go
-
+try:
+    import plotly.graph_objects as go
+    use_plotly = True
+except:
+    use_plotly = False
 fig = go.Figure()
 
 # Returns
