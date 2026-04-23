@@ -125,9 +125,9 @@ rolling_results['VaR_99_norm'] = np.nan
 rolling_results['ES_99_norm'] = np.nan
 
 
-for t in range(252, len(returns)):
+for i in range(252, len(returns)):
 
-    window_data = returns.iloc[t-252:t]
+    window_data = returns.iloc[i-252:i]
 
     # HISTÓRICO
     sorted_r = window_data.sort_values()
