@@ -3,226 +3,175 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 from scipy.stats import norm
-from scipy.stats import t
+from scipy.stats import t as student_t
 
-# Configuración de la página
+# ---------------------------
+# ⚙️ CONFIG
+# ---------------------------
 st.set_page_config(
     page_title="Risk Dashboard",
     page_icon="📉",
     layout="wide"
 )
+
+# ---------------------------
+# 📥 DATA
+# ---------------------------
 @st.cache_data
 def get_data():
     ticker = "BTC-USD"
-    data = yf.download(ticker, start="2010-01-01")
+    data = yf.download(ticker, start="2015-01-01")
 
-    # Ver qué columnas hay
     if 'Adj Close' in data.columns:
         data['Returns'] = data['Adj Close'].pct_change()
     else:
         data['Returns'] = data['Close'].pct_change()
 
-    data = data.dropna()
-
-    return data
+    return data.dropna()
 
 data = get_data()
+returns = data['Returns']
 
-# Página principal
-
+# ---------------------------
+# 📊 HEADER
+# ---------------------------
 st.title("📉 Análisis de Riesgo Financiero")
-st.write("Estimación de Value at Risk (VaR) y Expected Shortfall (ES)")
+st.write("Estimación de VaR y Expected Shortfall")
 
-# Mostrar datos
-st.header("Datos históricos", divider="gray")
-st.write(data.head())
+# ---------------------------
+# 📉 SERIES
+# ---------------------------
+st.header("Rendimientos")
+st.line_chart(returns)
 
-# Rendimientos
-
-st.header("Rendimientos diarios", divider="gray")
-
-st.line_chart(data['Returns'])
-
-
-
-st.header("Estadísticas", divider="gray")
-#INCISO B
-media = data['Returns'].mean()
-sesgo = data['Returns'].skew()
-curtosis = data['Returns'].kurt()
+# ---------------------------
+# 📈 STATS
+# ---------------------------
+st.header("Estadísticas")
 
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Media", f"{media:.6f}")
-col2.metric("Sesgo", f"{sesgo:.4f}")
-col3.metric("Curtosis", f"{curtosis:.4f}")
-#INCISO C
-st.header("VaR y Expected Shortfall", divider= 'red')
-alpha = [0.95, 0.975, 0.99]
+col1.metric("Media", f"{returns.mean():.6f}")
+col2.metric("Sesgo", f"{returns.skew():.4f}")
+col3.metric("Curtosis", f"{returns.kurt():.4f}")
 
-def var_es_normal(returns, alpha):
-    mean = returns.mean()
-    std = returns.std()
+# ---------------------------
+# 📐 FUNCIONES VaR
+# ---------------------------
+def var_es_normal(r, alpha):
+    mu = r.mean()
+    sigma = r.std()
 
     z = norm.ppf(1 - alpha)
 
-    VaR = mean + z * std
-    ES = mean - std * (norm.pdf(z) / (1 - alpha))
+    VaR = mu + z * sigma
+    ES = mu - sigma * (norm.pdf(z) / (1 - alpha))
 
     return VaR, ES
 
-def var_es_t(returns, alpha):
-    gl, med, disp = t.fit(returns)
 
-    x = t.ppf(1 - alpha, gl)
+def var_es_t(r, alpha):
+    r = pd.Series(r).dropna()
 
-    VaR = med + disp * x
+    df, loc, scale = student_t.fit(r)
 
-    ES = med + disp * (
-        (t.pdf(x, gl) / (1 - alpha)) * (gl + x**2) / (gl - 1)
+    x = student_t.ppf(1 - alpha, df)
+
+    VaR = loc + scale * x
+
+    ES = loc + scale * (
+        (student_t.pdf(x, df) / (1 - alpha)) * (df + x**2) / (df - 1)
     )
 
     return VaR, ES
-def var_es_hist(returns, alpha):
-    sorted_returns = returns.sort_values()
 
-    index = int((1 - alpha) * len(sorted_returns))
 
-    VaR = sorted_returns.iloc[index] #El inicio de las peores perdidas
-    ES = sorted_returns.iloc[:index].mean()
+def var_es_hist(r, alpha):
+    sorted_r = r.sort_values()
+    idx = int((1 - alpha) * len(sorted_r))
+
+    VaR = sorted_r.iloc[idx]
+    ES = sorted_r.iloc[:idx].mean()
 
     return VaR, ES
 
-def var_es_mc(returns, alpha, n_sim=10000):
-    media = returns.mean()
-    dev = returns.std()
 
-   
-    sim = np.random.normal(media, dev, n_sim)
+def var_es_mc(r, alpha, n_sim=10000):
+    mu = r.mean()
+    sigma = r.std()
 
-    # VaR
+    sim = np.random.normal(mu, sigma, n_sim)
+
     VaR = np.percentile(sim, (1 - alpha) * 100)
-
-    # ES
-    ES = sim[sim <= VaR].mean() #Seleccionamos solo los que son menores a VaR
+    ES = sim[sim <= VaR].mean()
 
     return VaR, ES
 
-returns = data['Returns']
 
-# DataFrame donde guardarás resultados
-rolling_results = pd.DataFrame(index=returns.index) #Necesitamos indice de tiempo
+# ---------------------------
+# 🔁 ROLLING VaR
+# ---------------------------
+rolling = pd.DataFrame(index=returns.index)
 
-# Inicializar columnas
-rolling_results['Returns'] = returns
-rolling_results['VaR_95_hist'] = np.nan
-rolling_results['ES_95_hist'] = np.nan
-rolling_results['VaR_99_hist'] = np.nan
-rolling_results['ES_99_hist'] = np.nan
-rolling_results['VaR_95_norm'] = np.nan
-rolling_results['ES_95_norm'] = np.nan
-rolling_results['VaR_99_norm'] = np.nan
-rolling_results['ES_99_norm'] = np.nan
-
+rolling['Returns'] = returns
+rolling[['VaR_95_hist', 'ES_95_hist',
+         'VaR_99_hist', 'ES_99_hist',
+         'VaR_95_norm', 'ES_95_norm',
+         'VaR_99_norm', 'ES_99_norm']] = np.nan
 
 for i in range(252, len(returns)):
+    window = returns.iloc[i-252:i]
 
-    window_data = returns.iloc[i-252:i]
+    # HIST
+    sorted_r = window.sort_values()
 
-    # HISTÓRICO
-    sorted_r = window_data.sort_values()
-
-    # 95%
     idx_95 = int(0.05 * len(sorted_r))
-    VaR_95_h = sorted_r.iloc[idx_95]
-    ES_95_h = sorted_r.iloc[:idx_95].mean()
-
-    # 99%
     idx_99 = int(0.01 * len(sorted_r))
-    VaR_99_h = sorted_r.iloc[idx_99]
-    ES_99_h = sorted_r.iloc[:idx_99].mean()
+
+    rolling.iloc[i, rolling.columns.get_loc('VaR_95_hist')] = sorted_r.iloc[idx_95]
+    rolling.iloc[i, rolling.columns.get_loc('ES_95_hist')] = sorted_r.iloc[:idx_95].mean()
+
+    rolling.iloc[i, rolling.columns.get_loc('VaR_99_hist')] = sorted_r.iloc[idx_99]
+    rolling.iloc[i, rolling.columns.get_loc('ES_99_hist')] = sorted_r.iloc[:idx_99].mean()
 
     # NORMAL
-    mu = window_data.mean()
-    sigma = window_data.std()
+    mu = window.mean()
+    sigma = window.std()
 
-    z_95 = norm.ppf(0.05)
-    z_99 = norm.ppf(0.01)
+    z95 = norm.ppf(0.05)
+    z99 = norm.ppf(0.01)
 
-    VaR_95_n = mu + sigma * z_95
-    VaR_99_n = mu + sigma * z_99
+    rolling.iloc[i, rolling.columns.get_loc('VaR_95_norm')] = mu + sigma * z95
+    rolling.iloc[i, rolling.columns.get_loc('ES_95_norm')] = mu - sigma * (norm.pdf(z95) / 0.05)
 
-    ES_95_n = mu - sigma * (norm.pdf(z_95) / 0.05)
-    ES_99_n = mu - sigma * (norm.pdf(z_99) / 0.01)
+    rolling.iloc[i, rolling.columns.get_loc('VaR_99_norm')] = mu + sigma * z99
+    rolling.iloc[i, rolling.columns.get_loc('ES_99_norm')] = mu - sigma * (norm.pdf(z99) / 0.01)
 
-    rolling_results.iloc[t, rolling_results.columns.get_loc('VaR_95_hist')] = VaR_95_h
-    rolling_results.iloc[t, rolling_results.columns.get_loc('ES_95_hist')] = ES_95_h
-    rolling_results.iloc[t, rolling_results.columns.get_loc('VaR_99_hist')] = VaR_99_h
-    rolling_results.iloc[t, rolling_results.columns.get_loc('ES_99_hist')] = ES_99_h
-
-    rolling_results.iloc[t, rolling_results.columns.get_loc('VaR_95_norm')] = VaR_95_n
-    rolling_results.iloc[t, rolling_results.columns.get_loc('ES_95_norm')] = ES_95_n
-    rolling_results.iloc[t, rolling_results.columns.get_loc('VaR_99_norm')] = VaR_99_n
-    rolling_results.iloc[t, rolling_results.columns.get_loc('ES_99_norm')] = ES_99_n
-    violations = rolling_results['Returns'] < rolling_results['VaR_95_hist']
+plot_data = rolling.dropna()
 
 # ---------------------------
-# 🔧 IMPORT SEGURO
+# 📉 GRÁFICA
 # ---------------------------
-try:
-    import plotly.graph_objects as go
-    use_plotly = True
-except:
-    use_plotly = False
+st.subheader("Returns vs VaR")
+
+st.line_chart(plot_data[['Returns', 'VaR_95_hist']])
 
 # ---------------------------
-# 📉 GRÁFICA PRINCIPAL
+# 🎯 SELECTOR
 # ---------------------------
-st.subheader("📉 Returns vs VaR")
+st.header("VaR y ES")
 
-plot_data = rolling_results.dropna()
+metodo = st.selectbox("Método", ["Normal", "t-Student", "Histórico", "Monte Carlo"])
+alpha = st.selectbox("Confianza", [0.95, 0.975, 0.99])
 
-if use_plotly:
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(
-        x=plot_data.index,
-        y=plot_data['Returns'],
-        name='Returns'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=plot_data.index,
-        y=plot_data['VaR_95_hist'],
-        name='VaR 95%',
-        line=dict(dash='dash')
-    ))
-
-    st.plotly_chart(fig)
-
+if metodo == "Normal":
+    VaR, ES = var_es_normal(returns, alpha)
+elif metodo == "t-Student":
+    VaR, ES = var_es_t(returns, alpha)
+elif metodo == "Histórico":
+    VaR, ES = var_es_hist(returns, alpha)
 else:
-    st.line_chart(
-        plot_data[['Returns', 'VaR_95_hist']]
-    )
-
-# ---------------------------
-# 📊 VaR y ES
-# ---------------------------
-st.header("📊 VaR y Expected Shortfall", divider='red')
-
-metodos = ["Normal", "t-Student", "Histórico", "Monte Carlo"]
-metodo_sel = st.selectbox("Selecciona método", metodos)
-
-alpha_sel = st.selectbox("Selecciona nivel de confianza", [0.95, 0.975, 0.99])
-
-if metodo_sel == "Normal":
-    VaR, ES = var_es_normal(returns, alpha_sel)
-elif metodo_sel == "t-Student":
-    VaR, ES = var_es_t(returns, alpha_sel)
-elif metodo_sel == "Histórico":
-    VaR, ES = var_es_hist(returns, alpha_sel)
-else:
-    VaR, ES = var_es_mc(returns, alpha_sel)
+    VaR, ES = var_es_mc(returns, alpha)
 
 col1, col2 = st.columns(2)
 col1.metric("VaR", f"{VaR:.5f}")
@@ -231,75 +180,23 @@ col2.metric("ES", f"{ES:.5f}")
 # ---------------------------
 # 📋 TABLA
 # ---------------------------
-st.subheader("📋 Comparación de métodos")
+st.subheader("Comparación")
 
-resultados = []
+res = []
 
 for a in [0.95, 0.975, 0.99]:
-    var_n, es_n = var_es_normal(returns, a)
-    var_t, es_t = var_es_t(returns, a)
-    var_h, es_h = var_es_hist(returns, a)
-    var_mc, es_mc = var_es_mc(returns, a)
-
-    resultados.append({
+    res.append({
         "Alpha": a,
-        "VaR Normal": var_n,
-        "VaR t": var_t,
-        "VaR Hist": var_h,
-        "VaR MC": var_mc,
+        "Normal": var_es_normal(returns, a)[0],
+        "t": var_es_t(returns, a)[0],
+        "Hist": var_es_hist(returns, a)[0],
+        "MC": var_es_mc(returns, a)[0],
     })
 
-df_results = pd.DataFrame(resultados)
-st.dataframe(df_results)
+df = pd.DataFrame(res)
+st.dataframe(df)
 
 # ---------------------------
-# 📊 GRÁFICA COMPARATIVA
+# 📊 BARRAS
 # ---------------------------
-st.subheader("📊 Comparación VaR")
-
-if use_plotly:
-    fig = go.Figure()
-
-    for col in ["VaR Normal", "VaR t", "VaR Hist", "VaR MC"]:
-        fig.add_bar(
-            x=df_results["Alpha"],
-            y=df_results[col],
-            name=col
-        )
-
-    st.plotly_chart(fig)
-
-else:
-    st.bar_chart(
-        df_results.set_index("Alpha")
-    )
-
-# ---------------------------
-# 📉 ROLLING
-# ---------------------------
-st.subheader("📉 Rolling VaR (252 días)")
-
-tipo_rolling = st.selectbox(
-    "Tipo de VaR rolling",
-    ["Histórico", "Normal"]
-)
-
-if tipo_rolling == "Histórico":
-    cols = ['Returns', 'VaR_95_hist', 'ES_95_hist']
-else:
-    cols = ['Returns', 'VaR_95_norm', 'ES_95_norm']
-
-if use_plotly:
-    fig2 = go.Figure()
-
-    for col in cols:
-        fig2.add_trace(go.Scatter(
-            x=plot_data.index,
-            y=plot_data[col],
-            name=col
-        ))
-
-    st.plotly_chart(fig2)
-
-else:
-    st.line_chart(plot_data[cols])
+st.bar_chart(df.set_index("Alpha"))
