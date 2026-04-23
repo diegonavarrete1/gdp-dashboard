@@ -7,10 +7,10 @@ from scipy.stats import t
 
 # Configuración de la página
 st.set_page_config(
-    page_title='VaR Dashboard',
-    page_icon='📉',
+    page_title="Risk Dashboard",
+    page_icon="📉",
+    layout="wide"
 )
-
 @st.cache_data
 def get_data():
     ticker = "BTC-USD"
@@ -57,6 +57,7 @@ col1.metric("Media", f"{media:.6f}")
 col2.metric("Sesgo", f"{sesgo:.4f}")
 col3.metric("Curtosis", f"{curtosis:.4f}")
 #INCISO C
+st.header("VaR y Expected Shortfall", divider= 'red')
 alpha = [0.95, 0.975, 0.99]
 
 def var_es_normal(returns, alpha):
@@ -111,18 +112,18 @@ def var_es_mc(returns, alpha, n_sim=10000):
 returns = data['Returns']
 
 # DataFrame donde guardarás resultados
-rolling_results = pd.DataFrame(index=returns.index)
+rolling_results = pd.DataFrame(index=returns.index) #Necesitamos indice de tiempo
 
 # Inicializar columnas
 rolling_results['Returns'] = returns
-rolling_results['VaR_95_hist'] = []
-rolling_results['ES_95_hist'] = []
-rolling_results['VaR_99_hist'] = []
-rolling_results['ES_99_hist'] = []
-rolling_results['VaR_95_norm'] = []
-rolling_results['ES_95_norm'] = []
-rolling_results['VaR_99_norm'] = []
-rolling_results['ES_99_norm'] = []
+rolling_results['VaR_95_hist'] = np.nan
+rolling_results['ES_95_hist'] = np.nan
+rolling_results['VaR_99_hist'] = np.nan
+rolling_results['ES_99_hist'] = np.nan
+rolling_results['VaR_95_norm'] = np.nan
+rolling_results['ES_95_norm'] = np.nan
+rolling_results['VaR_99_norm'] = np.nan
+rolling_results['ES_99_norm'] = np.nan
 
 
 for t in range(252, len(returns)):
@@ -164,3 +165,12 @@ for t in range(252, len(returns)):
     rolling_results.iloc[t, rolling_results.columns.get_loc('ES_95_norm')] = ES_95_n
     rolling_results.iloc[t, rolling_results.columns.get_loc('VaR_99_norm')] = VaR_99_n
     rolling_results.iloc[t, rolling_results.columns.get_loc('ES_99_norm')] = ES_99_n
+    violations = rolling_results['Returns'] < rolling_results['VaR_95_hist']
+
+fig.add_trace(go.Scatter(
+    x=rolling_results.index[violations],
+    y=rolling_results['Returns'][violations],
+    mode='markers',
+    name='Violaciones',
+))
+
