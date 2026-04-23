@@ -4,6 +4,7 @@ import yfinance as yf
 import numpy as np
 from scipy.stats import norm
 from scipy.stats import t
+import plotly.graph_objects as go
 
 # Configuración de la página
 st.set_page_config(
@@ -188,8 +189,10 @@ fig.add_trace(go.Scatter(
 
 st.plotly_chart(fig)
 
+st.line_chart(
+    rolling_results[['Returns', 'VaR_95_hist']].dropna()
+)
 
-import plotly.graph_objects as go
 
 st.header("📊 VaR y Expected Shortfall", divider='red')
 
