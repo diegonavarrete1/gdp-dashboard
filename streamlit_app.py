@@ -167,10 +167,24 @@ for t in range(252, len(returns)):
     rolling_results.iloc[t, rolling_results.columns.get_loc('ES_99_norm')] = ES_99_n
     violations = rolling_results['Returns'] < rolling_results['VaR_95_hist']
 
+import plotly.graph_objects as go
+
+fig = go.Figure()
+
+# Returns
 fig.add_trace(go.Scatter(
-    x=rolling_results.index[violations],
-    y=rolling_results['Returns'][violations],
-    mode='markers',
-    name='Violaciones',
+    x=rolling_results.index,
+    y=rolling_results['Returns'],
+    name='Returns'
 ))
+
+# VaR
+fig.add_trace(go.Scatter(
+    x=rolling_results.index,
+    y=rolling_results['VaR_95_hist'],
+    name='VaR 95%',
+    line=dict(dash='dash')
+))
+
+st.plotly_chart(fig)
 
